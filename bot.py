@@ -97,6 +97,8 @@ def download_media(url: str) -> str:
     }
 
     # تعيين cookies حسب المنصة
+    if platform == "youtube":
+    common_opts["js_runtimes"] = ["node"]
     if platform == "youtube" and has_yt:
         common_opts["cookiefile"] = YOUTUBE_COOKIES_FILE
     elif platform == "tiktok" and has_tt:
@@ -224,3 +226,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
