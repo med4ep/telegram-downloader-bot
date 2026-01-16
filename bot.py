@@ -224,13 +224,12 @@ def main():
         raise RuntimeError("BOT_TOKEN is not set in environment variables!")
 
     app = Application.builder().token(token).build()
+
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     print("Bot is running...")
-    app.run_polling(close_loop=False)
+    app.run_polling(close_loop=False, stop_signals=None)
 
 
-if __name__ == "__main__":
-    main()
