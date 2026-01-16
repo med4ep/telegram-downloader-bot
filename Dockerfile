@@ -8,7 +8,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# ✅ تحديث yt-dlp لأحدث إصدار دائمًا
+# ✅ تحديث دائم لأحدث yt-dlp
 RUN python -m pip install --no-cache-dir -U yt-dlp
 
 COPY . .
