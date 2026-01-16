@@ -9,27 +9,23 @@ DOWNLOAD_DIR = "downloads"
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
 URL_REGEX = r"(https?://\S+)"
-MAX_MB = 48  # حد إرسال الفيديو في كثير من البوتات
+MAX_MB = 48  # إذا كان الفيديو كبير نرسله كملف Document
 
-# ملفات الكوكيز داخل الكونتينر
 YOUTUBE_COOKIES_FILE = "youtube_cookies.txt"
 TIKTOK_COOKIES_FILE = "tiktok_cookies.txt"
 
 
-def _write_file_if_env_exists(env_name: str, filepath: str) -> bool:
-    """
-    يكتب محتوى متغير البيئة في ملف داخل السيرفر.
-    يرجع True إذا تم الكتابة.
-    """
-    val = os.getenv(env_name)
-    if not val:
+def write_env_to_file(env_name: str, file_path: str) -> bool:
+    """يحفظ قيمة Secret داخل ملف cookies.txt داخل السيرفر"""
+    value = os.getenv(env_name)
+    if not value:
         return False
-    with open(filepath, "w", encoding="utf-8") as f:
-        f.write(val)
+    with open(file_path, "w", encoding="utf-8") as f:
+        f.write(value)
     return True
 
 
-def _detect_platform(url: str) -> str:
+def detect_platform(url: str) -> str:
     u = url.lower()
     if "youtube.com" in u or "youtu.be" in u:
         return "youtube"
@@ -44,56 +40,48 @@ def _detect_platform(url: str) -> str:
     return "other"
 
 
-def _pretty_error(platform: str, err: str) -> str:
-    """
-    تحويل أخطاء yt-dlp لرسالة جميلة للمستخدم
-    """
+def pretty_error(platform: str, err: str) -> str:
     e = (err or "").lower()
 
-    if "sign in to confirm you’re not a bot" in e or "sign in to confirm you're not a bot" in e:
+    if "sign in to confirm" in e and platform == "youtube":
         return (
-            "❌ **فشل التحميل من YouTube**\n\n"
-            "🔒 يوتيوب طلب تحقق (Sign in) بسبب الحماية ضد البوتات.\n\n"
+            "❌ فشل التحميل من YouTube\n\n"
+            "يوتيوب طلب تحقق (Sign in) بسبب الحماية.\n\n"
             "✅ الحل:\n"
-            "• فعّل **YOUTUBE_COOKIES** في الاستضافة (Koyeb/Render)\n"
-            "• أو جرّب رابط آخر / فيديو مختلف.\n"
+            "• تأكد أن Secret (YOUTUBE_COOKIES) يحتوي cookies صحيحة من حسابك.\n"
+            "• جرّب فيديو آخر."
         )
 
     if "unable to extract webpage video data" in e and platform == "tiktok":
         return (
-            "❌ **فشل التحميل من TikTok**\n\n"
-            "🛡️ تيك توك منع التحميل بسبب الحماية.\n\n"
+            "❌ فشل التحميل من TikTok\n\n"
+            "تيك توك منع التحميل بسبب الحماية.\n\n"
             "✅ الحل:\n"
-            "• فعّل **TIKTOK_COOKIES** في الاستضافة\n"
-            "• أو جرّب رابط آخر.\n"
+            "• تأكد أن Secret (TIKTOK_COOKIES) يحتوي cookies صحيحة.\n"
+            "• جرّب رابط آخر."
         )
 
     if "ffmpeg" in e and ("not installed" in e or "not found" in e):
         return (
-            "❌ **فشل التحميل**\n\n"
-            "🔧 السيرفر يحتاج FFmpeg لدمج الصوت مع الفيديو.\n"
-            "✅ تأكد أنك تستخدم Dockerfile فيه تثبيت FFmpeg.\n"
+            "❌ فشل التحميل\n\n"
+            "السيرفر يحتاج FFmpeg لدمج الصوت مع الفيديو.\n"
+            "✅ تأكد أنك تستخدم Dockerfile فيه تثبيت ffmpeg."
         )
 
     return (
-        "❌ **فشل التحميل**\n\n"
+        "❌ فشل التحميل\n\n"
         "قد يكون الرابط غير مدعوم أو الموقع يحتاج تسجيل دخول.\n"
-        "🔧 حاول لاحقًا أو جرّب رابط ثاني.\n"
+        "🔁 جرّب رابط آخر أو حاول لاحقًا."
     )
 
 
 def download_media(url: str) -> str:
-    """
-    تحميل من الرابط مع دعم كوكيز لكل منصة.
-    يرجع مسار الملف النهائي.
-    """
-    platform = _detect_platform(url)
+    platform = detect_platform(url)
 
-    # تجهيز كوكيز لكل منصة (إذا موجودة)
-    has_yt_cookies = _write_file_if_env_exists("YOUTUBE_COOKIES", YOUTUBE_COOKIES_FILE)
-    has_tt_cookies = _write_file_if_env_exists("TIKTOK_COOKIES", TIKTOK_COOKIES_FILE)
+    # كتابة الكوكيز في ملفات داخل السيرفر (إذا موجودة)
+    has_yt = write_env_to_file("YOUTUBE_COOKIES", YOUTUBE_COOKIES_FILE)
+    has_tt = write_env_to_file("TIKTOK_COOKIES", TIKTOK_COOKIES_FILE)
 
-    # User-Agent بسيط وآمن ضد مشاكل النسخ
     user_agent = "Mozilla/5.0"
 
     common_opts = {
@@ -108,22 +96,23 @@ def download_media(url: str) -> str:
         "http_headers": {"User-Agent": user_agent},
     }
 
-    # اختيار cookiefile حسب المنصة
-    if platform == "youtube" and has_yt_cookies:
+    # تعيين cookies حسب المنصة
+    if platform == "youtube" and has_yt:
         common_opts["cookiefile"] = YOUTUBE_COOKIES_FILE
-    elif platform == "tiktok" and has_tt_cookies:
+    elif platform == "tiktok" and has_tt:
         common_opts["cookiefile"] = TIKTOK_COOKIES_FILE
 
-    # خطة 1: أفضل جودة (دمج صوت+فيديو)
-    plan1 = {**common_opts, "format": "bestvideo+bestaudio/best", "merge_output_format": "mp4"}
+    # خطط التحميل
+    plan_best_merge = {**common_opts, "format": "bestvideo+bestaudio/best", "merge_output_format": "mp4"}
+    plan_best_single = {**common_opts, "format": "best"}
+    plan_worst = {**common_opts, "format": "worst"}
 
-    # خطة 2: ملف واحد جاهز (مفيد لتجنب مشاكل TikTok أحيانًا)
-    plan2 = {**common_opts, "format": "best"}
+    # ✅ TikTok نبدأ بـ best single أولًا (أفضل حل)
+    if platform == "tiktok":
+        plans = [plan_best_single, plan_best_merge, plan_worst]
+    else:
+        plans = [plan_best_merge, plan_best_single, plan_worst]
 
-    # خطة 3: أسوأ جودة كحل أخير
-    plan3 = {**common_opts, "format": "worst"}
-
-    plans = [plan1, plan2, plan3]
     last_error = None
 
     for opts in plans:
@@ -132,7 +121,6 @@ def download_media(url: str) -> str:
                 info = ydl.extract_info(url, download=True)
                 file_path = ydl.prepare_filename(info)
 
-                # إذا أنتج mp4 بعد الدمج
                 base, _ = os.path.splitext(file_path)
                 mp4_path = base + ".mp4"
                 if os.path.exists(mp4_path):
@@ -148,7 +136,7 @@ def download_media(url: str) -> str:
     raise RuntimeError(str(last_error))
 
 
-def _cleanup_file(path: str):
+def cleanup(path: str):
     try:
         if path and os.path.exists(path):
             os.remove(path)
@@ -158,19 +146,20 @@ def _cleanup_file(path: str):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "👋 **أهلاً بك!**\n\n"
-        "📥 أرسل رابط فيديو من:\n"
+        "👋 أهلاً بك!\n\n"
+        "📥 أرسل رابط من:\n"
         "TikTok • YouTube • Instagram • X • Facebook\n\n"
-        "✅ وسأقوم بتحميله لك مباشرة.\n"
+        "وسأحمله لك ✅"
     )
 
 
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🛠️ **المساعدة**\n\n"
+        "🛠️ المساعدة:\n\n"
         "✅ فقط أرسل الرابط.\n\n"
-        "🔐 إذا واجهت YouTube أو TikTok حماية:\n"
-        "• فعّل **YOUTUBE_COOKIES** و **TIKTOK_COOKIES** في الاستضافة.\n"
+        "🔐 إذا YouTube أو TikTok رفض التحميل:\n"
+        "تأكد أن Secrets موجودة:\n"
+        "YOUTUBE_COOKIES + TIKTOK_COOKIES"
     )
 
 
@@ -183,39 +172,38 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     url = match.group(1)
-    platform = _detect_platform(url)
+    platform = detect_platform(url)
 
-    status = await update.message.reply_text("⏳ **جاري التحميل...**")
+    status = await update.message.reply_text("⏳ جاري التحميل...")
 
     file_path = None
     try:
         file_path = await asyncio.to_thread(download_media, url)
 
         size_mb = os.path.getsize(file_path) / (1024 * 1024)
+        await status.edit_text("✅ تم التحميل.. جاري الإرسال...")
 
-        await status.edit_text("✅ **تم التحميل، جاري الإرسال...**")
-
-        # إذا كبير، نرسله كملف Document
         if size_mb > MAX_MB:
             with open(file_path, "rb") as f:
                 await update.message.reply_document(
                     document=f,
                     filename=os.path.basename(file_path),
-                    caption="📦 تم الإرسال كملف بسبب الحجم الكبير."
+                    caption="📦 تم الإرسال كملف بسبب الحجم."
                 )
         else:
             with open(file_path, "rb") as f:
                 await update.message.reply_video(video=f)
 
-        await status.edit_text("✅ **تم الإرسال بنجاح!** 🎉")
+        await status.edit_text("✅ تم الإرسال بنجاح 🎉")
 
     except Exception as e:
-        msg = _pretty_error(platform, str(e))
-        await status.edit_text(msg, parse_mode="Markdown")
+        msg = pretty_error(platform, str(e))
+        # ✅ بدون Markdown حتى لا تظهر مشكلة parse entities
+        await status.edit_text(msg)
 
     finally:
         if file_path:
-            _cleanup_file(file_path)
+            cleanup(file_path)
 
 
 def main():
@@ -230,6 +218,9 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     print("Bot is running...")
+    # ✅ مهم جدًا لأن البوت يعمل داخل Thread في Koyeb
     app.run_polling(close_loop=False, stop_signals=None)
 
 
+if __name__ == "__main__":
+    main()
