@@ -1,7 +1,8 @@
 FROM python:3.11-slim
 
-# Install ffmpeg + nodejs (node مفيد لليوتيوب)
-RUN apt-get update && apt-get install -y ffmpeg nodejs && rm -rf /var/lib/apt/lists/*
+# install ffmpeg فقط
+RUN apt-get update && apt-get install -y ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 

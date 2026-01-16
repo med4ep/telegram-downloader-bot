@@ -14,12 +14,11 @@ URL_REGEX = r"(https?://\S+)"
 def download_video(url: str) -> str:
     ydl_opts = {
         "outtmpl": os.path.join(DOWNLOAD_DIR, "%(title).50s.%(ext)s"),
-        "format": "bestvideo+bestaudio/best",
+        "format": "best",
         "merge_output_format": "mp4",
         "noplaylist": True,
         "quiet": True,
         # (اختياري) يساعد مع يوتيوب لو Node موجود
-        "js_runtimes": ["node"],
     }
 
     with YoutubeDL(ydl_opts) as ydl:
