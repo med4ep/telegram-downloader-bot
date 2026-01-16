@@ -82,7 +82,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def main():
-    token = os.getenv("7041155332:AAHIT5M46hAx54dcmmqounPRe7pdqJhmCPM")
+    token = os.getenv("BOT_TOKEN")
     if not token:
         raise RuntimeError("BOT_TOKEN is not set in environment variables!")
 
