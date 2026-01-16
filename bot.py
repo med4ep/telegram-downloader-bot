@@ -9,7 +9,7 @@ DOWNLOAD_DIR = "downloads"
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
 URL_REGEX = r"(https?://\S+)"
-MAX_MB = 48  # إذا كان الفيديو كبير نرسله كملف Document
+MAX_MB = 48
 
 YOUTUBE_COOKIES_FILE = "youtube_cookies.txt"
 TIKTOK_COOKIES_FILE = "tiktok_cookies.txt"
@@ -48,7 +48,8 @@ def pretty_error(platform: str, err: str) -> str:
             "❌ فشل التحميل من YouTube\n\n"
             "يوتيوب طلب تحقق (Sign in) بسبب الحماية.\n\n"
             "✅ الحل:\n"
-            "• تأكد أن Secret (YOUTUBE_COOKIES) يحتوي cookies صحيحة من حسابك.\n"
+            "• حدّث YOUTUBE_COOKIES (ملف كامل من حساب مسجل دخول).\n"
+            "• افتح نفس الفيديو في المتصفح 10 ثواني ثم صدّر cookies من جديد.\n"
             "• جرّب فيديو آخر."
         )
 
@@ -57,7 +58,7 @@ def pretty_error(platform: str, err: str) -> str:
             "❌ فشل التحميل من TikTok\n\n"
             "تيك توك منع التحميل بسبب الحماية.\n\n"
             "✅ الحل:\n"
-            "• تأكد أن Secret (TIKTOK_COOKIES) يحتوي cookies صحيحة.\n"
+            "• تأكد أن TIKTOK_COOKIES صحيح (ملف كامل من حسابك).\n"
             "• جرّب رابط آخر."
         )
 
@@ -65,7 +66,7 @@ def pretty_error(platform: str, err: str) -> str:
         return (
             "❌ فشل التحميل\n\n"
             "السيرفر يحتاج FFmpeg لدمج الصوت مع الفيديو.\n"
-            "✅ تأكد أنك تستخدم Dockerfile فيه تثبيت ffmpeg."
+            "✅ تأكد Dockerfile يحتوي تثبيت ffmpeg."
         )
 
     return (
@@ -78,14 +79,13 @@ def pretty_error(platform: str, err: str) -> str:
 def download_media(url: str) -> str:
     platform = detect_platform(url)
 
-    # كتابة الكوكيز في ملفات داخل السيرفر (إذا موجودة)
+    # كتابة الكوكيز (إن وجدت)
     has_yt = write_env_to_file("YOUTUBE_COOKIES", YOUTUBE_COOKIES_FILE)
     has_tt = write_env_to_file("TIKTOK_COOKIES", TIKTOK_COOKIES_FILE)
 
     user_agent = "Mozilla/5.0"
 
     common_opts = {
-        "extractor_args": {"youtube": {"player_client": ["android"]}},
         "outtmpl": os.path.join(DOWNLOAD_DIR, "%(title).80s.%(ext)s"),
         "noplaylist": True,
         "quiet": True,
@@ -97,20 +97,33 @@ def download_media(url: str) -> str:
         "http_headers": {"User-Agent": user_agent},
     }
 
-    # تعيين cookies حسب المنصة
-    if platform == "youtube":
-    common_opts["js_runtimes"] = ["node"]
+    # كوكيز حسب المنصة
     if platform == "youtube" and has_yt:
         common_opts["cookiefile"] = YOUTUBE_COOKIES_FILE
     elif platform == "tiktok" and has_tt:
         common_opts["cookiefile"] = TIKTOK_COOKIES_FILE
+
+    # ✅ إعدادات يوتيوب قوية
+    if platform == "youtube":
+        # تفعيل Node.js runtime (بعد تثبيت Node في Dockerfile)
+        common_opts["js_runtimes"] = ["node"]
+
+        # تجربة أكثر من Client لرفع نسبة النجاح
+        common_opts["extractor_args"] = {
+            "youtube": {
+                "player_client": ["android", "web", "ios", "mweb"]
+            }
+        }
+
+        # أي قيود عمرية
+        common_opts["age_limit"] = 99
 
     # خطط التحميل
     plan_best_merge = {**common_opts, "format": "bestvideo+bestaudio/best", "merge_output_format": "mp4"}
     plan_best_single = {**common_opts, "format": "best"}
     plan_worst = {**common_opts, "format": "worst"}
 
-    # ✅ TikTok نبدأ بـ best single أولًا (أفضل حل)
+    # ✅ TikTok يبدأ بـ best single أولاً
     if platform == "tiktok":
         plans = [plan_best_single, plan_best_merge, plan_worst]
     else:
@@ -124,6 +137,7 @@ def download_media(url: str) -> str:
                 info = ydl.extract_info(url, download=True)
                 file_path = ydl.prepare_filename(info)
 
+                # لو تم الدمج إلى mp4
                 base, _ = os.path.splitext(file_path)
                 mp4_path = base + ".mp4"
                 if os.path.exists(mp4_path):
@@ -201,8 +215,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         msg = pretty_error(platform, str(e))
-        # ✅ بدون Markdown حتى لا تظهر مشكلة parse entities
-        await status.edit_text(msg)
+        await status.edit_text(msg)  # بدون Markdown لتفادي الأخطاء
 
     finally:
         if file_path:
@@ -221,11 +234,9 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     print("Bot is running...")
-    # ✅ مهم جدًا لأن البوت يعمل داخل Thread في Koyeb
+    # مهم لأن البوت يعمل داخل Thread في Koyeb
     app.run_polling(close_loop=False, stop_signals=None)
 
 
 if __name__ == "__main__":
     main()
-
-
