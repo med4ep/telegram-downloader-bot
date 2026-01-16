@@ -1,17 +1,21 @@
 FROM python:3.11-slim
 
-RUN apt-get update && apt-get install -y ffmpeg curl \
-    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y nodejs \
+# تثبيت المكتبات الأساسية
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
+# إنشاء مجلد التطبيق
 WORKDIR /app
 
+# نسخ ملفات المتطلبات
 COPY requirements.txt .
+
+# تثبيت المكتبات
 RUN pip install --no-cache-dir -r requirements.txt
 
-RUN python -m pip install --no-cache-dir -U yt-dlp
+# نسخ الكود
+COPY bot.py .
 
-COPY . .
-
-CMD ["python", "server.py"]
+# تشغيل البوت
+CMD ["python", "bot.py"]
