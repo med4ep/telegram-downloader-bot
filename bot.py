@@ -12,7 +12,24 @@ URL_REGEX = r"(https?://\S+)"
 
 
 def download_video(url: str) -> str:
-    ydl_opts = {
+ydl_opts = {
+    "outtmpl": os.path.join(DOWNLOAD_DIR, "%(title).50s.%(ext)s"),
+    "format": "bestvideo+bestaudio/best",
+    "merge_output_format": "mp4",
+    "noplaylist": True,
+    "quiet": True,
+
+    # ✅ تحسينات مهمة لمواقع مثل TikTok
+    "nocheckcertificate": True,
+    "geo_bypass": True,
+    "extractor_retries": 3,
+    "fragment_retries": 3,
+
+    # ✅ User-Agent قوي (يساعد كثير)
+    "http_headers": {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+    },
+}
         "outtmpl": os.path.join(DOWNLOAD_DIR, "%(title).50s.%(ext)s"),
         "format": "best",
         "merge_output_format": "mp4",
