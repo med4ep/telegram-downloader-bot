@@ -25,15 +25,16 @@ os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 # قائمة المواقع المدعومة
 SUPPORTED_SITES = """
 🌐 المواقع المدعومة:
-• YouTube
-• Facebook
-• Instagram
-• Twitter/X
+• YouTube (فيديوهات وShorts)
 • TikTok
+• Facebook
+• Instagram (Reels & Posts)
+• Twitter/X
 • Reddit
 • Vimeo
 • Dailymotion
 • SoundCloud
+• Pinterest
 وأكثر من 1000+ موقع آخر!
 """
 
@@ -67,6 +68,12 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 • حجم الملف يجب أن يكون أقل من 50 ميجابايت
 • بعض الروابط قد تحتاج وقتاً أطول للتحميل
 • الملفات الخاصة لا يمكن تحميلها
+
+✨ مدعوم:
+• YouTube - فيديوهات عادية وShorts
+• TikTok - كل أنواع الفيديوهات
+• Instagram - Reels وPosts
+• Twitter/X - فيديوهات وصور
 """
     await update.message.reply_text(help_text)
 
@@ -84,9 +91,72 @@ async def info_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 تم التطوير باستخدام:
 • Python
 • python-telegram-bot
-• yt-dlp
+• yt-dlp (محدث)
 """
     await update.message.reply_text(info_text)
+
+def get_ydl_opts(url):
+    """الحصول على إعدادات yt-dlp المناسبة حسب الموقع"""
+    
+    # إعدادات أساسية لجميع المواقع
+    base_opts = {
+        'outtmpl': f'{DOWNLOAD_FOLDER}/%(id)s.%(ext)s',
+        'quiet': False,
+        'no_warnings': False,
+        'extract_flat': False,
+        'nocheckcertificate': True,
+        'geo_bypass': True,
+        'socket_timeout': 30,
+        'retries': 3,
+        'fragment_retries': 3,
+    }
+    
+    # إعدادات خاصة بيوتيوب
+    if 'youtube.com' in url or 'youtu.be' in url:
+        return {
+            **base_opts,
+            'format': 'best[ext=mp4][filesize<50M]/best[filesize<50M]/best',
+            'merge_output_format': 'mp4',
+            'postprocessors': [{
+                'key': 'FFmpegVideoConvertor',
+                'preferedformat': 'mp4',
+            }],
+        }
+    
+    # إعدادات خاصة بتيك توك
+    elif 'tiktok.com' in url or 'vt.tiktok.com' in url or 'vm.tiktok.com' in url:
+        return {
+            **base_opts,
+            'format': 'best[ext=mp4]/best',
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Referer': 'https://www.tiktok.com/',
+            },
+        }
+    
+    # إعدادات خاصة بانستجرام
+    elif 'instagram.com' in url:
+        return {
+            **base_opts,
+            'format': 'best[ext=mp4]/best',
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15',
+            },
+        }
+    
+    # إعدادات خاصة بتويتر/X
+    elif 'twitter.com' in url or 'x.com' in url:
+        return {
+            **base_opts,
+            'format': 'best[ext=mp4]/best',
+        }
+    
+    # إعدادات افتراضية لباقي المواقع
+    else:
+        return {
+            **base_opts,
+            'format': 'best[filesize<50M]/best',
+        }
 
 async def download_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """تحميل المحتوى من الرابط"""
@@ -98,102 +168,143 @@ async def download_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     # إرسال رسالة انتظار
-    status_msg = await update.message.reply_text("⏳ جاري التحميل... يرجى الانتظار")
+    status_msg = await update.message.reply_text("⏳ جاري معالجة الرابط...")
     
     filename = None
     try:
-        # إعدادات yt-dlp
-        ydl_opts = {
-            'format': 'best[filesize<50M]/best',
-            'outtmpl': f'{DOWNLOAD_FOLDER}/%(id)s.%(ext)s',
-            'quiet': True,
-            'no_warnings': True,
-            'extract_flat': False,
-            'nocheckcertificate': True,
-            'geo_bypass': True,
-        }
+        # الحصول على الإعدادات المناسبة
+        ydl_opts = get_ydl_opts(url)
+        
+        logger.info(f"Starting download from: {url}")
+        await status_msg.edit_text("⏳ جاري التحميل... قد يستغرق بعض الوقت")
         
         # تحميل الفيديو/الملف
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            logger.info(f"Downloading from: {url}")
+            # استخراج المعلومات أولاً
+            try:
+                info = ydl.extract_info(url, download=False)
+                
+                # التحقق من الحجم قبل التحميل
+                filesize = info.get('filesize') or info.get('filesize_approx', 0)
+                if filesize > 52428800:  # 50MB
+                    await status_msg.edit_text("❌ الملف كبير جداً (أكثر من 50 ميجابايت).\n💡 جرب جودة أقل أو فيديو أقصر.")
+                    return
+                
+                logger.info(f"Video title: {info.get('title', 'Unknown')}")
+                logger.info(f"Estimated size: {filesize / (1024*1024):.2f} MB")
+                
+            except Exception as e:
+                logger.warning(f"Could not extract info: {e}")
+            
+            # تحميل الملف
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
             
+            # في حالة تيك توك أحياناً يكون الامتداد مختلف
+            if not os.path.exists(filename):
+                # البحث عن الملف بأي امتداد
+                base_name = os.path.splitext(filename)[0]
+                for ext in ['.mp4', '.webm', '.mkv', '.mov']:
+                    test_file = base_name + ext
+                    if os.path.exists(test_file):
+                        filename = test_file
+                        break
+            
             # التحقق من وجود الملف
             if not os.path.exists(filename):
-                await status_msg.edit_text("❌ فشل التحميل. جرب رابطاً آخر.")
+                await status_msg.edit_text("❌ فشل التحميل. قد يكون الرابط خاطئاً أو المحتوى محذوف.")
                 return
             
             file_size = os.path.getsize(filename) / (1024 * 1024)
-            logger.info(f"File size: {file_size:.2f} MB")
+            logger.info(f"Downloaded file size: {file_size:.2f} MB")
             
-            # التحقق من حجم الملف
+            # التحقق من حجم الملف بعد التحميل
             if file_size > 50:
-                await status_msg.edit_text("❌ الملف كبير جداً (أكثر من 50 ميجابايت). جرب رابطاً آخر.")
+                await status_msg.edit_text("❌ الملف كبير جداً (أكثر من 50 ميجابايت).")
                 if os.path.exists(filename):
                     os.remove(filename)
                 return
             
-            await status_msg.edit_text("📤 جاري رفع الملف...")
+            await status_msg.edit_text("📤 جاري رفع الملف... انتظر قليلاً")
             
             # إرسال الملف
             with open(filename, 'rb') as file:
                 title = info.get('title', 'غير متوفر')
                 if len(title) > 100:
                     title = title[:97] + "..."
-                caption = f"✅ تم التحميل بنجاح!\n\n📝 العنوان: {title}"
+                
+                # معلومات إضافية
+                duration = info.get('duration', 0)
+                duration_str = f"{int(duration//60)}:{int(duration%60):02d}" if duration else "غير متوفر"
+                
+                caption = f"✅ تم التحميل بنجاح!\n\n📝 {title}\n⏱️ المدة: {duration_str}"
                 
                 # تحديد نوع الملف
                 ext = filename.split('.')[-1].lower()
                 
                 try:
                     if ext in ['mp4', 'mkv', 'avi', 'mov', 'webm']:
+                        # إرسال كفيديو
                         await update.message.reply_video(
                             video=file,
                             caption=caption,
                             supports_streaming=True,
-                            read_timeout=60,
-                            write_timeout=60
+                            read_timeout=120,
+                            write_timeout=120,
+                            connect_timeout=120,
+                            pool_timeout=120
                         )
                     elif ext in ['mp3', 'm4a', 'wav', 'ogg']:
                         await update.message.reply_audio(
                             audio=file,
                             caption=caption,
-                            read_timeout=60,
-                            write_timeout=60
+                            read_timeout=120,
+                            write_timeout=120
                         )
                     elif ext in ['jpg', 'jpeg', 'png', 'gif', 'webp']:
                         await update.message.reply_photo(
                             photo=file,
                             caption=caption,
-                            read_timeout=60,
-                            write_timeout=60
+                            read_timeout=120,
+                            write_timeout=120
                         )
                     else:
                         await update.message.reply_document(
                             document=file,
                             caption=caption,
-                            read_timeout=60,
-                            write_timeout=60
+                            read_timeout=120,
+                            write_timeout=120
                         )
                 except Exception as send_error:
                     logger.error(f"Error sending file: {send_error}")
-                    await status_msg.edit_text("❌ فشل إرسال الملف. قد يكون الملف كبيراً جداً أو تالفاً.")
+                    await status_msg.edit_text("❌ فشل إرسال الملف. الملف قد يكون كبيراً جداً أو تالفاً.")
                     return
             
-            # حذف رسالة الحالة والملف المؤقت
+            # حذف رسالة الحالة
             await status_msg.delete()
-            logger.info("File sent and deleted successfully")
+            logger.info("File sent successfully")
             
     except yt_dlp.utils.DownloadError as e:
-        error_msg = "❌ فشل التحميل. تأكد من:\n• صحة الرابط\n• أن المحتوى ليس خاصاً\n• أن الموقع مدعوم"
+        error_str = str(e).lower()
+        
+        if 'private' in error_str or 'login' in error_str:
+            error_msg = "❌ المحتوى خاص أو يتطلب تسجيل دخول.\n💡 تأكد أن الحساب عام."
+        elif 'not available' in error_str or 'removed' in error_str:
+            error_msg = "❌ المحتوى غير متوفر أو تم حذفه."
+        elif 'copyright' in error_str:
+            error_msg = "❌ المحتوى محمي بحقوق النشر."
+        elif 'geo' in error_str or 'region' in error_str:
+            error_msg = "❌ المحتوى غير متاح في منطقتك الجغرافية."
+        else:
+            error_msg = "❌ فشل التحميل.\n\n💡 تأكد من:\n• صحة الرابط\n• أن المحتوى عام وليس خاص\n• أن الحساب غير محذوف"
+        
         await status_msg.edit_text(error_msg)
         logger.error(f"Download error: {e}")
         
     except Exception as e:
-        error_msg = f"❌ حدث خطأ غير متوقع. حاول مرة أخرى."
+        error_msg = "❌ حدث خطأ غير متوقع.\n\n💡 حاول:\n• إرسال الرابط مرة أخرى\n• التأكد من صحة الرابط"
         await status_msg.edit_text(error_msg)
-        logger.error(f"Unexpected error: {e}")
+        logger.error(f"Unexpected error: {e}", exc_info=True)
         
     finally:
         # تنظيف الملف المؤقت
