@@ -85,6 +85,7 @@ def download_media(url: str) -> str:
     user_agent = "Mozilla/5.0"
 
     common_opts = {
+        "extractor_args": {"youtube": {"player_client": ["android"]}},
         "outtmpl": os.path.join(DOWNLOAD_DIR, "%(title).80s.%(ext)s"),
         "noplaylist": True,
         "quiet": True,
@@ -226,4 +227,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
